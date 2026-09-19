@@ -146,7 +146,7 @@ ai-global list-commands               # commands 목록 표시
 ai-global list-agents                 # agents 목록 표시
 ```
 
-`add-*` 은 출처를 `.ai-global/source.md` 에 기록합니다 (형식: `GitHub URL|유형|설치 경로`). `update-skills` 는 이 기록을 기준으로 다시 clone 해 기존 스킬을 덮어씁니다. 기록된 항목만 갱신하므로 저장소에 나중에 추가된 스킬은 설치되지 않습니다 (그런 경우 `add-skill` 을 사용하세요). 실행 전에 기존 기록을 `source.md.bak` 으로 백업합니다. `add-skill` 을 거치지 않은 로컬 자작 스킬은 기록이 없어 영향을 받지 않습니다.
+`add-*` 은 출처를 `.ai-global/source.md` 에 기록합니다 (형식: `GitHub URL|유형|설치 경로`). `update-skills` 는 이 기록을 기준으로 다시 clone 해 기존 스킬을 덮어씁니다. 또한 출처 저장소와 동기화합니다. 저장소에 나중에 추가된 스킬은 목록으로 보여 주고 설치 여부를 묻고 (기본값 Y), 저장소에서 삭제되었거나 이름이 바뀐 스킬은 목록으로 보여 주고 로컬의 이전 버전을 삭제할지 묻습니다 (기본값 Y). clone 에 실패했거나 저장소에서 스킬을 하나도 찾지 못한 경우에는 삭제로 판단하지 않습니다. 필요 없는 스킬은 디렉터리를 지우지 말고 `disable` 로 비활성화하세요. 지우면 다음 실행 때 새로 추가된 스킬로 다시 표시됩니다. 실행 전에 기존 기록을 `source.md.bak` 으로 백업합니다. `add-skill` 을 거치지 않은 로컬 자작 스킬은 기록이 없어 영향을 받지 않습니다.
 
 `remove-skill` 은 `add-skill` 과 대칭이며 **repo 단위**로 동작합니다. `user/repo` 또는 전체 GitHub URL 을 주면 `v-skills/<작성자>/<repo>/` 아래의 모든 스킬, 해당 투영 symlink, 그 출처의 모든 설치 기록, 그리고 관련 비활성화 규칙을 삭제합니다. 같은 repo 의 스킬은 서로 호출하는 경우가 많아 (handoff 가 implement 로, research 가 to-spec 으로) 하나씩 제거하면 동작하지 않는 반쪽만 남습니다. 따라서 **단일 스킬을 제거하는 명령은 없습니다** — 그중 하나만 쓰지 않으려면 `disable` 하세요. 실체와 설치 기록이 모두 남으므로 언제든 `enable` 로 되돌릴 수 있습니다.
 

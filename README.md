@@ -146,7 +146,7 @@ ai-global list-commands               # 列出 commands
 ai-global list-agents                 # 列出 agents
 ```
 
-`add-*` 會將來源記錄在 `.ai-global/source.md`（格式 `GitHub URL|類型|安裝路徑`）。`update-skills` 依此紀錄重新 clone 並覆蓋既有 skill，只更新紀錄中已安裝的項目，不會安裝倉庫後來新增的 skill（那些請用 `add-skill`）。執行前會將原紀錄備份為 `source.md.bak`。本地自建、未經 `add-skill` 安裝的 skill 沒有紀錄，不受影響。
+`add-*` 會將來源記錄在 `.ai-global/source.md`（格式 `GitHub URL|類型|安裝路徑`）。`update-skills` 依此紀錄重新 clone 並覆蓋既有 skill，並與來源倉庫同步：倉庫後來新增的 skill 會列出並詢問是否安裝（預設 Y），倉庫已移除或改名的會列出並詢問是否刪除本地舊版（預設 Y）。clone 失敗或倉庫裡掃不到任何 skill 時不會判定移除。不想要的 skill 請用 `disable` 停用而不是刪目錄，否則下次會被當成新增再列出來。執行前會將原紀錄備份為 `source.md.bak`。本地自建、未經 `add-skill` 安裝的 skill 沒有紀錄，不受影響。
 
 `remove-skill` 與 `add-skill` 對稱，**以 repo 為單位**：接受 `user/repo` 或完整 GitHub 網址，刪掉 `v-skills/<作者>/<repo>/` 底下的全部技能、對應的投影 symlink、該來源的所有安裝紀錄與停用清單規則。同一個 repo 的技能常互相引用（handoff 交給 implement、research 產出給 to-spec），拆開來單獨移除只會留下叫不動的半套，所以不提供移除單一技能的指令——**要停止使用其中某一個請用 `disable`**，實體與安裝紀錄都會保留，隨時 `enable` 回來。
 
