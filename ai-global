@@ -107,6 +107,8 @@ UPDATE_MODE=false
 # 平行索引陣列（bash 3.2 沒有關聯陣列）：更新時要裝回的 skill 名與其實體路徑
 declare -a UPDATE_ONLY_NAMES=()
 declare -a UPDATE_TARGET_DIRS=()
+# download_from_github 在更新模式下回報：已記錄、但來源倉庫已找不到的 skill 實體路徑
+declare -a UPDATE_GONE_DIRS=()
 
 # 美化目錄路徑顯示
 beautify_dir() {
@@ -188,7 +190,7 @@ show_help() {
   echo -e "  ${GREEN}add-skill <user/repo>${NC}    從 GitHub 安裝 skill 至 .ai-global/v-skills/"
   echo -e "  ${GREEN}add-rule <user/repo>${NC}     從 GitHub 安裝 rule 至 .ai-global/rules/"
   echo -e "  ${GREEN}add-command <user/repo>${NC}  從 GitHub 安裝 command 至 .ai-global/commands/"
-  echo -e "  ${GREEN}update-skills${NC}            收攏未分類 skill，並依 source.md 紀錄重新安裝"
+  echo -e "  ${GREEN}update-skills${NC}            收攏未分類 skill，依 source.md 紀錄更新並同步來源的新增與移除"
   echo -e "  ${GREEN}remove-skill <user/repo>${NC} 移除該 repo 裝的全部 skill 並清除安裝紀錄"
   echo -e "  ${GREEN}list-skills, -ls${NC}         列出 skills（v-skills 分類樹）"
   echo -e "  ${GREEN}list-rules, -lr${NC}          列出 rules"
@@ -1791,17 +1793,58 @@ download_from_github() {
         local -a _keep_sources=()
         local -a _keep_names=()
         local -a _keep_targets=()
-        local _k
+        local -a _new_idx=()
+        local -a _recorded_hit=() # 與 UPDATE_ONLY_NAMES 同索引，來源仍有的記 1
+        local _k _hit
         for _i in "${!_install_sources[@]}"; do
+          _hit=false
           for _k in "${!UPDATE_ONLY_NAMES[@]}"; do
             if [[ "${_install_names[$_i]}" == "${UPDATE_ONLY_NAMES[$_k]}" ]]; then
               # 同名可能對應多個實體位置（不同分類），每個都要各更新一份
               _keep_sources+=("${_install_sources[$_i]}")
               _keep_names+=("${_install_names[$_i]}")
               _keep_targets+=("${UPDATE_TARGET_DIRS[$_k]}")
+              _recorded_hit[$_k]=1
+              _hit=true
             fi
           done
+          [[ "$_hit" == false ]] && _new_idx+=("$_i")
         done
+
+        # 已記錄但來源已找不到的，交回 update_skills 確認後移除。
+        # 走到這裡代表來源至少掃到一個 skill；一個都掃不到多半是倉庫改了結構，不當成「全部被移除」
+        for _k in "${!UPDATE_ONLY_NAMES[@]}"; do
+          [[ -z "${_recorded_hit[$_k]:-}" ]] && UPDATE_GONE_DIRS+=("${UPDATE_TARGET_DIRS[$_k]}")
+        done
+
+        # 來源新增、尚未安裝的 skill：沒有舊位置可沿用，走預設分類機制
+        if [[ ${#_new_idx[@]} -gt 0 ]]; then
+          local -a _new_targets=()
+          log_info "$owner/$repo 有 ${#_new_idx[@]} 個尚未安裝的 $resource_label:"
+          local _new_target
+          for _i in "${_new_idx[@]}"; do
+            _new_target=$(install_target_path "$resource_label" "$target_dir" \
+              "$owner" "$repo" "${_install_categories[$_i]}" "${_install_names[$_i]}")
+            _new_targets+=("$_new_target")
+            printf "  %-40s → %s\n" "${_install_names[$_i]}" "$(beautify_dir "$_new_target")"
+          done
+          echo ""
+          log_warn "請確認您已對此倉庫進行安全掃描"
+          read -r -p "是否一併安裝?[Y/n] " _reply
+          _reply="${_reply:-Y}"
+          if [[ "$_reply" =~ ^[Yy] ]]; then
+            for _k in "${!_new_idx[@]}"; do
+              _i="${_new_idx[$_k]}"
+              _keep_sources+=("${_install_sources[$_i]}")
+              _keep_names+=("${_install_names[$_i]}")
+              _keep_targets+=("${_new_targets[$_k]}")
+            done
+          else
+            log_info "已跳過新增的 $resource_label"
+          fi
+          echo ""
+        fi
+
         _install_sources=("${_keep_sources[@]}")
         _install_names=("${_keep_names[@]}")
         _install_targets=("${_keep_targets[@]}")
@@ -2171,6 +2214,66 @@ adopt_flat_skills() {
   echo ""
 }
 
+# 移除來源倉庫已不再提供的 skill（實體、投影、安裝紀錄、個別停用規則一起清）
+# $1: base_dir  $2: 來源 URL（僅供顯示）  其餘: 實體路徑
+# 預設 Y：update-skills 的目的是讓本地與來源一致
+remove_gone_skills() {
+  local base_dir="$1"
+  local repo_url="$2"
+  shift 2
+  local -a gone_dirs=("$@")
+
+  [[ ${#gone_dirs[@]} -eq 0 ]] && return 0
+
+  local skills_dir="$base_dir/.ai-global/skills"
+  local vdir
+  vdir=$(vskills_dir "$base_dir")
+  local source_file
+  source_file=$(source_file_path "$base_dir")
+  local list_file
+  list_file=$(disable_list_path "$base_dir")
+
+  echo ""
+  log_warn "$repo_url 已不再提供以下 ${#gone_dirs[@]} 個 skill（被移除或改名）:"
+  local dir
+  for dir in "${gone_dirs[@]}"; do
+    echo "  $(beautify_dir "$dir")"
+  done
+  echo ""
+  # stdin 已關閉（非互動執行）時 read 會失敗，不能讓空答案落到預設 Y 而直接刪除
+  read -r -p "是否移除本地的舊版?[Y/n] " _reply || _reply="N"
+  _reply="${_reply:-Y}"
+
+  if [[ ! "$_reply" =~ ^[Yy] ]]; then
+    log_info "已保留（之後的 update-skills 仍會再問）"
+    return 0
+  fi
+
+  local link parent rel removed=0
+  for dir in "${gone_dirs[@]}"; do
+    # 先清投影 symlink：render_skills 遇到同名衝突會中止，屆時斷鏈會留在 skills/
+    link="$skills_dir/$(basename "$dir")"
+    [[ -L "$link" ]] && [[ ! -e "$link" || "$link" -ef "$dir" ]] && rm -f -- "$link"
+
+    rm -rf -- "$dir"
+    drop_source_record "$source_file" "skill" "$(beautify_dir "$dir")"
+
+    if [[ "$dir" == "$vdir"/* ]]; then
+      rel="${dir#$vdir/}"
+      disable_list_remove "$list_file" "$rel" > /dev/null
+
+      # 分類層空了就往上收，避免分類樹留下空層
+      parent=$(dirname "$dir")
+      while [[ "$parent" != "$vdir" ]] && rmdir -- "$parent" 2> /dev/null; do
+        parent=$(dirname "$parent")
+      done
+    fi
+    removed=$((removed + 1))
+  done
+
+  log_ok "已移除 $removed 個來源已不再提供的 skill"
+}
+
 update_skills() {
   local base_dir="${1:-$HOME}"
   local skills_dir="$base_dir/.ai-global/skills"
@@ -2245,11 +2348,15 @@ update_skills() {
     done < "$source_file"
 
     echo ""
+    UPDATE_GONE_DIRS=()
     UPDATE_MODE=true
     download_from_github "$_r" "$skills_dir" "SKILL.md" "skill" "skills skill"
     UPDATE_MODE=false
     UPDATE_ONLY_NAMES=()
     UPDATE_TARGET_DIRS=()
+
+    remove_gone_skills "$base_dir" "$_r" "${UPDATE_GONE_DIRS[@]}"
+    UPDATE_GONE_DIRS=()
   done
 
   echo ""
