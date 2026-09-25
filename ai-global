@@ -1016,6 +1016,20 @@ prune_macos_cruft() {
   echo "$count"
 }
 
+# 列出 skills/ 底下尚未收攏的實體目錄（symlink 不算，隱藏項如 .system 排除）
+# 排除其他工具自管的同步目錄：Claude Code 會把 claude.ai 帳號的 skill 同步到
+# ~/.claude/skills/synced/<bucket>/，並在 synced/ 放 .bucket-* 標記檔。
+# 收攏它會被 Claude Code 立刻重建，而 v-skills 留下的舊快照會與同名 skill 衝突。
+list_unadopted_skill_dirs() {
+  local skills_dir="$1"
+  local dir
+  while IFS= read -r dir; do
+    [[ -z "$dir" ]] && continue
+    compgen -G "$dir/.bucket-*" > /dev/null && continue
+    echo "$dir"
+  done < <(find "$skills_dir" -mindepth 1 -maxdepth 1 -type d ! -name '.*' 2> /dev/null | sort)
+}
+
 # 重建投影層：只建 symlink，不搬任何實體檔案。必須冪等。
 _RENDER_COUNT=0
 render_skills() {
@@ -1200,7 +1214,7 @@ list_skills() {
     while IFS= read -r entry; do
       [[ -z "$entry" ]] && continue
       _pending+=("$(basename "$entry")")
-    done < <(find "$skills_dir" -mindepth 1 -maxdepth 1 -type d ! -name '.*' 2> /dev/null | sort)
+    done < <(list_unadopted_skill_dirs "$skills_dir")
   fi
 
   if [[ ${#_pending[@]} -gt 0 ]]; then
@@ -2132,7 +2146,7 @@ adopt_flat_skills() {
   while IFS= read -r entry; do
     [[ -z "$entry" ]] && continue
     _pend_names+=("$(basename "$entry")")
-  done < <(find "$skills_dir" -mindepth 1 -maxdepth 1 -type d ! -name '.*' 2> /dev/null | sort)
+  done < <(list_unadopted_skill_dirs "$skills_dir")
 
   [[ ${#_pend_names[@]} -eq 0 ]] && return 0
 
