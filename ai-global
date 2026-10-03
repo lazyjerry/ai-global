@@ -2799,6 +2799,7 @@ remove_skill() {
 #   2. GitHub API：有 GITHUB_TOKEN 時帶認證；未認證時每個 IP 每小時只有 60 次
 #   3. 網頁 releases/latest 的轉址：不經 API，不受上述限流
 # 全部失敗時把各來源的失敗原因寫到 stderr，回傳 1
+# install.sh 有一份同邏輯的 fetch_latest_tag（安裝時無法 source 本檔），改這裡要一起改。
 fetch_latest_tag() {
   local tag
   local -a reasons=()
