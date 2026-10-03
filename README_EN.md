@@ -1,6 +1,6 @@
 # AI Global
 
-[繁體中文](README.md) · English · [简体中文](README_CN.md) · [日本語](README_JP.md) · [한국어](README_KR.md)
+[繁體中文](README.md) · English
 
 ---
 
@@ -103,6 +103,8 @@ Note: AI Global only handles tool directories that already exist. It does not cr
 | `ai-global uninstall`                    | Completely remove ai-global            |
 | `ai-global version`                      | Show version                           |
 | `ai-global help`                         | Show help                              |
+
+`upgrade` looks up the latest version via `gh api` (your logged-in quota), then the GitHub API (authenticated when `GITHUB_TOKEN` is set), then the `github.com/.../releases/latest` redirect, so it still works when unauthenticated API requests are rate-limited. If every source fails, it lists the reason for each.
 
 ### Project mode
 

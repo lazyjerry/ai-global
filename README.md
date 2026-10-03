@@ -1,6 +1,6 @@
 # AI Global
 
-繁體中文 · [English](README_EN.md) · [简体中文](README_CN.md) · [日本語](README_JP.md) · [한국어](README_KR.md)
+繁體中文 · [English](README_EN.md)
 
 ---
 
@@ -103,6 +103,8 @@ ai-global update
 | `ai-global uninstall`                    | 完整解除安裝                     |
 | `ai-global version`                      | 顯示版本號                       |
 | `ai-global help`                         | 顯示說明                         |
+
+`upgrade` 依序用 `gh api`（已登入帳號的額度）、GitHub API（有 `GITHUB_TOKEN` 時帶認證）、`github.com/.../releases/latest` 轉址查最新版本，未認證 API 被限流時仍能升級；全部失敗時會列出各來源的原因。
 
 ### 專案模式
 
