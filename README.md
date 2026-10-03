@@ -36,6 +36,8 @@
 curl -fsSL https://raw.githubusercontent.com/lazyjerry/ai-global/main/install.sh | bash
 ```
 
+安裝腳本查最新版本的順序與 `ai-global upgrade` 相同（`gh api` → GitHub API → `releases/latest` 轉址），主程式從 `raw.githubusercontent.com` 依 tag 下載，不經 GitHub API，未認證被限流時仍可安裝。三種來源都查不到版本時會列出原因，改裝 `main` 分支。
+
 ### npm
 
 ```bash

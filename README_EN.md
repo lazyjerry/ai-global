@@ -36,6 +36,8 @@ Edit one file, sync to all your AI tools.
 curl -fsSL https://raw.githubusercontent.com/lazyjerry/ai-global/main/install.sh | bash
 ```
 
+The installer looks up the latest version in the same order as `ai-global upgrade` (`gh api` → GitHub API → `releases/latest` redirect) and downloads the script from `raw.githubusercontent.com` by tag, not through the GitHub API, so it still works when unauthenticated requests are rate-limited. If no source returns a version, it lists the reasons and installs from the `main` branch instead.
+
 ### npm
 
 ```bash
