@@ -2794,16 +2794,70 @@ remove_skill() {
   log_ok "已移除 $owner/$repo 的 ${#rels[@]} 個 skill（清除 $dropped 筆安裝紀錄）"
 }
 
+# 取得最新 release tag，依序嘗試三種來源，成功即輸出 tag：
+#   1. gh api：走已登入帳號的認證額度
+#   2. GitHub API：有 GITHUB_TOKEN 時帶認證；未認證時每個 IP 每小時只有 60 次
+#   3. 網頁 releases/latest 的轉址：不經 API，不受上述限流
+# 全部失敗時把各來源的失敗原因寫到 stderr，回傳 1
+fetch_latest_tag() {
+  local tag
+  local -a reasons=()
+
+  if command -v gh > /dev/null 2>&1; then
+    # gh api 失敗時會把錯誤 JSON 印到 stdout，要連同回傳值一起判斷
+    if tag=$(gh api "repos/$REPO_SLUG/releases/latest" --jq '.tag_name' 2> /dev/null) && [[ -n "$tag" ]]; then
+      echo "$tag"
+      return 0
+    fi
+    reasons+=("gh api：查詢失敗（未登入、沒有 release 或網路問題）")
+  fi
+
+  local -a auth_args=()
+  [[ -n "${GITHUB_TOKEN:-}" ]] && auth_args=(-H "Authorization: Bearer $GITHUB_TOKEN")
+  local response status
+  response=$(curl -sSL --max-time 15 ${auth_args[@]+"${auth_args[@]}"} -w '\n%{http_code}' \
+    "https://api.github.com/repos/$REPO_SLUG/releases/latest" 2> /dev/null)
+  status="${response##*$'\n'}"
+  if [[ "$status" == "200" ]]; then
+    tag=$(echo "$response" | grep '"tag_name"' | sed 's/.*"tag_name": "\(.*\)".*/\1/')
+    if [[ -n "$tag" ]]; then
+      echo "$tag"
+      return 0
+    fi
+    reasons+=("GitHub API：回應中沒有 tag_name")
+  elif [[ "$status" == "403" || "$status" == "429" ]]; then
+    if [[ -n "${GITHUB_TOKEN:-}" ]]; then
+      reasons+=("GitHub API：HTTP ${status}，限流或 GITHUB_TOKEN 權限不足")
+    else
+      reasons+=("GitHub API：HTTP ${status}，未認證請求已達限流（每 IP 每小時 60 次），可設定 GITHUB_TOKEN 或執行 gh auth login")
+    fi
+  else
+    reasons+=("GitHub API：HTTP ${status:-000}")
+  fi
+
+  local redirect
+  redirect=$(curl -sS --max-time 15 -o /dev/null -w '%{http_code} %{redirect_url}' \
+    "https://github.com/$REPO_SLUG/releases/latest" 2> /dev/null)
+  if [[ "$redirect" == *"/releases/tag/"* ]]; then
+    echo "${redirect##*/releases/tag/}"
+    return 0
+  fi
+  reasons+=("releases/latest 轉址：HTTP ${redirect%% *}")
+
+  log_warn "無法取得最新版本：" >&2
+  local reason
+  for reason in "${reasons[@]}"; do
+    log_warn "  $reason" >&2
+  done
+  return 1
+}
+
 # 升級
 upgrade() {
   log_info "正在檢查更新..."
 
-  # 從 GitHub API 取得最新 release tag
   local latest_tag
-  latest_tag=$(curl -fsSL "https://api.github.com/repos/$REPO_SLUG/releases/latest" 2> /dev/null | grep '"tag_name"' | sed 's/.*"tag_name": "\(.*\)".*/\1/')
-
-  if [[ -z "$latest_tag" ]]; then
-    log_warn "無法取得最新版本"
+  if ! latest_tag=$(fetch_latest_tag); then
     return 1
   fi
 
