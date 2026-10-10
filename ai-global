@@ -64,6 +64,7 @@ declare -a INTERACTIVE_MENU_ITEMS=(
   "16|global|render-skills||重建 skills 投影"
   "17|global|disable|target|停用 skill/分類"
   "18|global|enable|target|啟用 skill/分類"
+  "19|global|prune-backups||清理備份資料夾"
   "21|project|update||更新 symlink"
   "22|project|list||列出支援工具"
   "23|project|relink||重建 symlink"
@@ -185,6 +186,7 @@ show_help() {
   echo -e "  ${GREEN}unlink <key>${NC}        還原工具的原始設定"
   echo -e "  ${GREEN}unlink all${NC}          還原所有工具"
   echo -e "  ${GREEN}clean, -c${NC}           清理孤立備份"
+  echo -e "  ${GREEN}prune-backups [選項]${NC} 清理備份資料夾，刪除前列出並確認（選項見 prune-backups -h）"
   echo ""
   echo -e "${BLUE}資源管理:${NC}"
   echo -e "  ${GREEN}add-skill <user/repo>${NC}    從 GitHub 安裝 skill 至 .ai-global/v-skills/"
@@ -1356,6 +1358,152 @@ clean_backups() {
     log_ok "已清理 $orphaned_count 個孤立備份"
   fi
   echo ""
+}
+
+show_prune_backups_help() {
+  echo -e "${BLUE}用法:${NC} ai-global prune-backups [選項]"
+  echo ""
+  echo "清理 ~/.ai-global/backups/。預設只挑「非 *.backup」的項目"
+  echo "（舊版留下的時間戳備份、手動放進來的備份）；刪除前一律列出並確認。"
+  echo ""
+  echo -e "${BLUE}選項:${NC}"
+  echo -e "  ${GREEN}-a, --all${NC}              連同 *.backup 一起清理（unlink 靠它還原原始設定）"
+  echo -e "  ${GREEN}--older-than <天數>${NC}    只挑修改時間超過 N 天的項目"
+  echo -e "  ${GREEN}-n, --dry-run${NC}          只列出，不刪除"
+  echo -e "  ${GREEN}-y, --yes${NC}              略過確認（給腳本或排程用；非互動環境不加會拒絕刪除）"
+  echo -e "  ${GREEN}-h, --help${NC}             顯示此說明"
+  echo ""
+}
+
+# 清理備份資料夾：依選項挑出項目，列出後經確認才刪除
+prune_backups() {
+  local base_dir="$HOME"
+  local backups_dir="$base_dir/.ai-global/backups"
+  local include_active=false
+  local older_than=""
+  local dry_run=false
+  local assume_yes=false
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -a | --all) include_active=true ;;
+      -n | --dry-run) dry_run=true ;;
+      -y | --yes) assume_yes=true ;;
+      --older-than)
+        if [[ $# -lt 2 ]]; then
+          log_error "--older-than 需要天數"
+          return 1
+        fi
+        older_than="$2"
+        shift
+        ;;
+      --older-than=*) older_than="${1#--older-than=}" ;;
+      -h | --help)
+        show_prune_backups_help
+        return 0
+        ;;
+      *)
+        log_error "未知的選項: $1"
+        show_prune_backups_help
+        return 1
+        ;;
+    esac
+    shift
+  done
+
+  if [[ -n "$older_than" ]] && [[ ! "$older_than" =~ ^[0-9]+$ ]]; then
+    log_error "--older-than 的天數必須是非負整數: $older_than"
+    return 1
+  fi
+
+  log_context_info "$backups_dir"
+
+  if [[ ! -d "$backups_dir" ]]; then
+    log_info "備份目錄不存在"
+    echo ""
+    return 0
+  fi
+
+  local find_args=("$backups_dir" -mindepth 1 -maxdepth 1 ! -name ".DS_Store")
+  [[ "$include_active" != true ]] && find_args+=(! -name "*.backup")
+  [[ -n "$older_than" ]] && find_args+=(-mmin "+$((older_than * 1440))")
+
+  local targets
+  targets=$(find "${find_args[@]}" 2> /dev/null | sort)
+
+  if [[ -z "$targets" ]]; then
+    log_info "沒有符合條件的備份"
+    echo ""
+    return 0
+  fi
+
+  local count=0
+  local active_count=0
+  local total_kb=0
+  local target size_kb size_h mtime note
+
+  echo -e "  ${BLUE}符合條件的項目${NC}"
+  echo "  ----------------------------------------------------------------------"
+  while IFS= read -r target; do
+    [[ -z "$target" ]] && continue
+    size_kb=$(du -sk -- "$target" 2> /dev/null | cut -f1)
+    size_h=$(du -sh -- "$target" 2> /dev/null | cut -f1)
+    # GNU stat 用 -c；BSD stat（macOS）不認 -c 會失敗，再改用 -f
+    mtime=$(stat -c '%y' -- "$target" 2> /dev/null) \
+      || mtime=$(stat -f '%Sm' -t '%Y-%m-%d' -- "$target" 2> /dev/null)
+    mtime="${mtime%% *}"
+    note=""
+    if [[ "$target" == *.backup ]]; then
+      note=" ${YELLOW}(unlink 還原用)${NC}"
+      ((active_count++))
+    fi
+    echo -e "  $(printf '%-10s %6s' "$mtime" "$size_h")  $(beautify_dir "$target")${note}"
+    total_kb=$((total_kb + ${size_kb:-0}))
+    ((count++))
+  done <<< "$targets"
+  echo ""
+
+  local total_h
+  total_h=$(awk -v k="$total_kb" 'BEGIN { if (k >= 1048576) printf "%.1fG", k / 1048576; else if (k >= 1024) printf "%.1fM", k / 1024; else printf "%dK", k }')
+  log_info "共 $count 項，約 $total_h"
+  if [[ $active_count -gt 0 ]]; then
+    log_warn "其中 $active_count 項是 *.backup，刪除後 unlink 無法還原該工具的原始設定"
+  fi
+
+  if [[ "$dry_run" == true ]]; then
+    log_info "dry-run：未刪除任何項目"
+    echo ""
+    return 0
+  fi
+
+  if [[ "$assume_yes" != true ]]; then
+    if [[ ! -t 0 ]]; then
+      log_error "非互動環境需加 --yes 才會刪除"
+      echo ""
+      return 1
+    fi
+    local _reply
+    read -r -p "確定刪除以上 $count 項?[y/N] " _reply
+    if [[ ! "$_reply" =~ ^[Yy]$ ]]; then
+      log_info "已取消"
+      echo ""
+      return 0
+    fi
+  fi
+
+  local removed_count=0
+  while IFS= read -r target; do
+    [[ -z "$target" ]] && continue
+    if rm -rf -- "$target"; then
+      ((removed_count++))
+    else
+      log_error "刪除失敗: $(beautify_dir "$target")"
+    fi
+  done <<< "$targets"
+
+  log_ok "已刪除 $removed_count 項備份"
+  echo ""
+  [[ $removed_count -eq $count ]]
 }
 
 # 重建所有 symlink
@@ -3084,6 +3232,7 @@ main() {
     relink | -r | --relink) relink_all "$RUN_BASE_DIR" ;;
     unlink | --unlink) unlink_tool "$arg1" "$RUN_BASE_DIR" ;;
     clean | -c | --clean) clean_backups ;;
+    prune-backups) prune_backups "${args[@]:1}" ;;
     add-skill) add_skill "$arg1" "$RUN_BASE_DIR" ;;
     update-skills) update_skills "$RUN_BASE_DIR" ;;
     remove-skill) remove_skill "$arg1" "$RUN_BASE_DIR" ;;

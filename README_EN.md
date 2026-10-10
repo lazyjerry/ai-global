@@ -89,6 +89,7 @@ Note: AI Global only handles tool directories that already exist. It does not cr
 | `ai-global unlink <key>`                 | Restore a tool's original config       |
 | `ai-global unlink all`                   | Restore all tools                      |
 | `ai-global clean`                        | Clean up orphaned backups              |
+| `ai-global prune-backups [options]`      | Clean up the backups folder, listing and confirming before deletion (`-a` includes `*.backup`, `--older-than <days>`, `-n` list only, `-y` skip confirmation) |
 | `ai-global add-skill <user/repo>`        | Add skills from GitHub repository      |
 | `ai-global add-rule <user/repo>`         | Add rules from GitHub repository       |
 | `ai-global add-command <user/repo>`      | Add commands from GitHub repository    |

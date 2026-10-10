@@ -89,6 +89,7 @@ ai-global update
 | `ai-global unlink <key>`                 | 還原某個工具的原始設定           |
 | `ai-global unlink all`                   | 還原所有工具                     |
 | `ai-global clean`                        | 清理孤立備份                     |
+| `ai-global prune-backups [選項]`         | 清理備份資料夾，刪除前列出並確認（`-a` 含 `*.backup`、`--older-than <天數>`、`-n` 只列出、`-y` 略過確認） |
 | `ai-global add-skill <user/repo>`        | 新增技能                         |
 | `ai-global add-rule <user/repo>`         | 新增規則                         |
 | `ai-global add-command <user/repo>`      | 新增指令                         |
